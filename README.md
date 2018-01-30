@@ -17,6 +17,10 @@ On linux you can use the following command to crate a graph.ps file
 
     ./git-graph | dot -Tps -o graph.ps
 
+On linux you can use the following command to crate a PDF file
+
+    ./git-graph --debug -m | tee gitgraph.gv | dot -T pdf -o gitgraph-lately.pdf
+
 Example with range
 
     ./git-graph -r a51eced..HEAD | dot -Tps -o graph.ps
