@@ -9,6 +9,7 @@ import textwrap
 import math
 import time
 import collections
+import logging
 
 # colors
 COLOR_NODE = "cornsilk"
@@ -36,11 +37,10 @@ parser.add_argument("-m", "--messages", dest="messages", action="store_true", he
 parser.add_argument("-r", "--range", help="git commit range" )
 
 args = parser.parse_args()
-debug = args.debug
 
-def log(message):
-    if debug:
-        print(message, file=sys.stderr)
+logging.basicConfig(level=logging.INFO)
+if args.debug:
+    logging.getLogger().setLevel(logging.DEBUG)
 
 def graphviz_list (name, s):
     if len(s) < 1:
@@ -51,10 +51,10 @@ def graphviz_list (name, s):
 revRange = ""
 if args.range:
     revRange = " " + args.range
-    log("Range: " + revRange)
+    logging.info("Range: %s", revRange)
 
-gitLogCommand = 'git log --pretty=format:"[%ct||%cn||%ci||%s||%d] %h %p" --all ' + revRange
-log('Git log command: ' + gitLogCommand)
+gitLogCommand = 'git log --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
+logging.info('Git log command: %s', gitLogCommand)
 output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
 (out, err) = output.communicate()
 lines = out.split("\n")
@@ -67,7 +67,7 @@ predefinedNodeColor = {}
 def getCommitDiff(hash):
     # get only the changed lines (starting with + or -), no line numbers, hashes, ...
     command = 'git diff ' + hash + '^ ' + hash + ' | grep "^[-+]"'
-    log("Hash Command: " + command)
+    logging.info("Hash Command: %s", command)
     diffOutput = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
     (diff, err) = diffOutput.communicate()
     return diff
@@ -153,23 +153,20 @@ for line in lines:
             if commitHash is not existingHash and date > dates[existingHash]:
                 diffHashOld = getCommitDiffHash(existingHash)
                 diffHashActual = getCommitDiffHash(commitHash)
-                log("M [" + message + "]")
-                log("1 [" + diffHashOld + "]")
-                log("2 [" + diffHashActual + "]")
+                logging.info("M [%s, %s, %s]", message, diffHashOld, diffHashActual)
                 if diffHashOld == diffHashActual:
                     log("equal")
                     print('    "' + str(existingHash) + '"->"' + commitHash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     nodeColor = COLOR_NODE_CHERRY_PICK
                     #labelExt = "\\nCherry Pick"
-                log("")
-        log("Message: [" + message + "]")
+        logging.info("Message: [%s]", message)
         if message.startswith("Revert"):
             # check for revert
-            log("Revert commit")
+            logging.info("Revert commit")
             match = re.match(revertMessagePattern, message)
             if match:
                 originalMessage = match.group(1)
-                log("Revert match [" + originalMessage + "]")
+                logging.info("Revert match [%s]", originalMessage)
                 origRevertHash = messages[originalMessage]
                 print('    "' + commitHash + '"->"' + str(origRevertHash) + '"[dir=back,label="Revert",style=dotted,fontcolor="azure4",color="azure4"]')
             nodeColor = COLOR_NODE_REVERT
@@ -182,17 +179,16 @@ for line in lines:
                 linecolor = "black"
                 shape = "oval"
 
+                refEntry = refEntry.strip()
+
                 if "test" in refEntry:
                     fillcolor = COLOR_TEST
                 elif "master" in refEntry:
                     fillcolor = COLOR_MASTER
-                elif "RobotBuilder" in refEntry:
-                    fillcolor = COLOR_ROBOTBUILDER
-                elif "Logging" in refEntry:
-                    fillcolor = COLOR_ROBOTBUILDER
 
                 if "HEAD" in refEntry:
                     fillcolor = COLOR_HEAD
+                    continue
                 elif "tag" in refEntry:
                     refEntry = refEntry.replace("tag: ", "")
                     fillcolor = COLOR_TAG
@@ -203,17 +199,18 @@ for line in lines:
                     nodeColor = COLOR_STASH
                     labelExt = "\\nSTASH"
                     if getCommitDiff(parentHash1) == "":
-                        log('>>> "' + parentHash1 + '"[color=red]')
                         predefinedNodeColor[parentHash1] = COLOR_STASH
                     elif getCommitDiff(parentHash2) == "":
-                        log('>>> "' + parentHash2 + '"[color=red]')
                         predefinedNodeColor[parentHash2] = COLOR_STASH
                     continue
                 #else:
                     #if "origin" in refEntry:
                     #    continue
                 style = "shape=%s,fillcolor=%s" % (shape, fillcolor)
-                nodeInfo += '    "' + refEntry + '"[style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted]\n'
+                refLabel = refEntry
+                refLabel = re.sub(r'^\s*origin/', '', refLabel)
+
+                nodeInfo += '    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted]\n'
 
         numberOfLines = math.floor(len(nodeMessage)/60) + 1
         lineLength = round(len(nodeMessage) / numberOfLines)
@@ -223,7 +220,7 @@ for line in lines:
           nm2 += "\\n"
           nm2 += line
         pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
-        print("    \"" + commitHash + "\"[label=\"" + commitHash + " (" + user + ") " + pdate + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
+        print("    \"" + commitHash + "\"[label=\"" + user + " " + pdate + " (" + commitHash + ")" + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
         #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
         if nodeInfo:
             print(nodeInfo)
