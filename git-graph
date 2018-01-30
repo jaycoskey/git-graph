@@ -5,6 +5,8 @@ import re
 import hashlib
 import sys
 import argparse
+import textwrap
+import math
 
 # colors
 COLOR_NODE = "cornsilk"
@@ -105,12 +107,14 @@ for line in lines:
         else:
             nodeColor=COLOR_NODE
         if parentHash1:
-            link = " \"" + parentHash1 + "\"->\"" + commitHash + "\";"
+            #link = " \"" + parentHash1 + "\"->\"" + commitHash + "\";"
+            link = " \"" + commitHash + "\"->\"" + parentHash1 + "\";"
         else:
             #initial commit
             nodeColor = COLOR_NODE_FIRST
         if parentHash2:
-            link2 = " \"" + parentHash2 + "\"->\"" + commitHash + "\";"
+            #link2 = " \"" + parentHash2 + "\"->\"" + commitHash + "\";"
+            link2 = " \"" + commitHash + "\"->\"" + parentHash2 + "\";"
         if parentHash1 and parentHash2:
             nodeColor = COLOR_NODE_MERGE
         if message in messages:
@@ -165,7 +169,16 @@ for line in lines:
                     #if "origin" in refEntry:
                     #    continue
                 nodeInfo += '    "' + refEntry + '"[style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '"\n'
-        print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
+
+        numberOfLines = math.floor(len(nodeMessage)/60) + 1
+        lineLength = round(len(nodeMessage) / numberOfLines)
+        chunks = textwrap.wrap (nodeMessage, lineLength + 6)
+        nm2 = ""
+        for line in chunks:
+          nm2 += "\\n"
+          nm2 += line
+        print("    \"" + commitHash + "\"[label=\"" + commitHash + " (" + user + ")" + nm2 + labelExt + "\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
+        #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
         if nodeInfo:
             print(nodeInfo)
 print("}")
