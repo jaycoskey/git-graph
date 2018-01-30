@@ -22,7 +22,7 @@ COLOR_STASH = "red"
 COLOR_TEST = "ForestGreen"
 COLOR_MASTER = "yellowgreen"
 
-pattern = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
+pattern = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
 revertMessagePattern = re.compile(r'Revert "(.*)"')
 
 parser = argparse.ArgumentParser()
@@ -44,7 +44,7 @@ if args.range:
     revRange = " " + args.range
     log("Range: " + revRange)
 
-gitLogCommand = 'git log --pretty=format:"[%ct||%cn||%s||%d] %h %p" --all ' + revRange
+gitLogCommand = 'git log --pretty=format:"[%ct||%cn||%ci||%s||%d] %h %p" --all ' + revRange
 log('Git log command: ' + gitLogCommand)
 output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
 (out, err) = output.communicate()
@@ -68,13 +68,14 @@ def getCommitDiffHash(hash):
     return sha.hexdigest()
 
 print("digraph G {")
+print('    size="7.5,13" margin=0.5')
 #first extract messages
 for line in lines:
     match = re.match(pattern, line)
     if match:
         date = match.group(1)
-        message = match.group(3)
-        commitHash = match.group(5)
+        message = match.group(4)
+        commitHash = match.group(6)
         if message in messages:
             existing = messages[message]
             #print(dates[existing]+" - "+date)
@@ -91,11 +92,12 @@ for line in lines:
     if match:
         date = match.group(1)
         user = match.group(2)
-        message = match.group(3)
-        ref = match.group(4)
-        commitHash = match.group(5)
-        parentHash1 = match.group(6)
-        parentHash2 = match.group(7)
+        pdate = match.group(3)
+        message = match.group(4)
+        ref = match.group(5)
+        commitHash = match.group(6)
+        parentHash1 = match.group(7)
+        parentHash2 = match.group(8)
 
         link = ""
         link2 = ""
@@ -186,7 +188,8 @@ for line in lines:
         for line in chunks:
           nm2 += "\\n"
           nm2 += line
-        print("    \"" + commitHash + "\"[label=\"" + commitHash + " (" + user + ")" + nm2 + labelExt + "\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
+        pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
+        print("    \"" + commitHash + "\"[label=\"" + commitHash + " (" + user + ") " + pdate + nm2 + labelExt + "\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
         #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
         if nodeInfo:
             print(nodeInfo)
