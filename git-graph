@@ -50,6 +50,7 @@ output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, uni
 (out, err) = output.communicate()
 lines = out.split("\n")
 
+hashes = {}
 dates = {}
 messages = {}
 predefinedNodeColor = {}
@@ -85,6 +86,7 @@ for line in lines:
         else:
             messages[message] = commitHash
         dates[commitHash] = date
+        hashes[commitHash] = True
 
 for line in lines:
     #print(line)
@@ -112,14 +114,14 @@ for line in lines:
         else:
             nodeColor=COLOR_NODE
         if parentHash1:
-            #link = " \"" + parentHash1 + "\"->\"" + commitHash + "\";"
-            link = " \"" + commitHash + "\"->\"" + parentHash1 + "\";"
+            if parentHash1 in hashes:
+                link = " \"" + commitHash + "\"->\"" + parentHash1 + "\";"
         else:
             #initial commit
             nodeColor = COLOR_NODE_FIRST
         if parentHash2:
-            #link2 = " \"" + parentHash2 + "\"->\"" + commitHash + "\";"
-            link2 = " \"" + commitHash + "\"->\"" + parentHash2 + "\";"
+            if parentHash2 in hashes:
+                link2 = " \"" + commitHash + "\"->\"" + parentHash2 + "\";"
         if parentHash1 and parentHash2:
             nodeColor = COLOR_NODE_MERGE
         if message in messages:
