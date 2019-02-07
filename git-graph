@@ -15,8 +15,8 @@ import collections
 import logging
 
 # colors
-COLOR_NODE = "cornsilk"
-COLOR_NODE_MERGE = "cornsilk3"
+COLOR_NODE = "cornsilk3"
+COLOR_NODE_MERGE = "cornsilk"
 #COLOR_NODE_MERGE = "red"
 COLOR_NODE_FIRST = "cyan"
 COLOR_NODE_CHERRY_PICK = "burlywood1"
