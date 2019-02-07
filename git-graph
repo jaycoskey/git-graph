@@ -13,6 +13,7 @@ import math
 import time
 import collections
 import logging
+import pprint
 
 # colors
 COLOR_NODE = "cornsilk3"
@@ -122,6 +123,8 @@ print('    size="{0}!,{1}!" margin={2}'.format(w, h, margin))
 commit_to_simpleref = { }
 # {simpleref}->set of commits
 simpleref_commits = { }
+#
+local_ref_present = set()
 
 for line in lines:
     match = re.match(pattern, line)
@@ -152,6 +155,9 @@ for line in lines:
 
                 simple = simplify_ref(refEntry)
 
+                if simple == refEntry:
+                    local_ref_present.add(simple)
+
                 sc_set = simpleref_commits.get(simple, None)
                 if sc_set is None:
                     sc_set = simpleref_commits[simple] = set()
@@ -163,7 +169,8 @@ for line in lines:
                 s_r.append (refEntry)
 
 logging.info ("simplerefs -> commits = %s", simpleref_commits)
-#print (commit_to_simpleref)
+logging.info ("commit -> simplerefs -> [refs] = %s", pprint.pformat(commit_to_simpleref, indent=1, width=80, depth=None))
+logging.info ("local ref present = %s", local_ref_present)
 
 cutoff = time.time() - (24 * 60 * 60)
 for line in lines:
@@ -190,13 +197,17 @@ for line in lines:
         stashed = False
 
         for simple, refs in commit_to_simpleref[commitHash].items():
-            logging.info ("commithash: %s, simple '%s', refs %s", commitHash, simple, str(refs))
+            logging.info ("Refs for %s: simple '%s', refs %s", commitHash, simple, str(refs))
             print_all_refs = args.show_remote_branches
 
             commits_for_this_simple_ref = simpleref_commits[simple]
             if len(commits_for_this_simple_ref) > 1:
                 # the various local/remotes for this branch are on multiple commits
                 logging.info ("branch %s shows up on multiple commits, printing all refs", simple)
+                print_all_refs = True
+
+            # we don't have any local refs, so we better print the remote ones
+            if not simple in local_ref_present:
                 print_all_refs = True
 
             ref_fillcolor = COLOR_BRANCH
@@ -228,10 +239,11 @@ for line in lines:
                 for ref in refs:
                     if 'refs/stash' in ref or '/' not in ref:
                         label_refs.append(ref)
+
+            # use label_refs even if empty; the resulting empty bubble is a sign that
+            # we have a code bug
             refLabel = '\\n'.join(label_refs)
-
             style = "shape=%s,fillcolor=%s" % (ref_shape, ref_fillcolor)
-
             print('    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];')
 
 
