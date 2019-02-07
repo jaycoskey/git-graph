@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+
 __author__ = 'Stephan Bechter <stephan@apogeum.at>'
 import subprocess
 import re
@@ -34,6 +37,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("-x", "--debug", dest="debug", action="store_true", help="Show debug messages on stderr")
 parser.add_argument("-m", "--messages", dest="messages", action="store_true", help="Show commit messages in node" )
+parser.add_argument("-C", dest="C", help="Path to dir" )
 parser.add_argument("-r", "--range", help="git commit range" )
 
 args = parser.parse_args()
@@ -50,10 +54,14 @@ def graphviz_list (name, s):
 
 revRange = ""
 if args.range:
-    revRange = " " + args.range
+    revRange = args.range
     logging.info("Range: %s", revRange)
 
-gitLogCommand = 'git log --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
+git_dir_spec=""
+if args.C:
+    git_dir_spec = "-C " + args.C + " "
+
+gitLogCommand = 'git ' + git_dir_spec + 'log --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
 logging.info('Git log command: %s', gitLogCommand)
 output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
 (out, err) = output.communicate()
@@ -66,7 +74,8 @@ predefinedNodeColor = {}
 
 def getCommitDiff(hash):
     # get only the changed lines (starting with + or -), no line numbers, hashes, ...
-    command = 'git diff ' + hash + '^ ' + hash + ' | grep "^[-+]"'
+    global git_dir_spec
+    command = 'git ' + git_dir_spec + 'diff ' + hash + '^ ' + hash + ' | grep "^[-+]"'
     logging.info("Hash Command: %s", command)
     diffOutput = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
     (diff, err) = diffOutput.communicate()
