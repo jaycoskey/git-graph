@@ -37,6 +37,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("-x", "--debug", dest="debug", action="store_true", help="Show debug messages on stderr")
 parser.add_argument("-m", "--messages", dest="messages", action="store_true", help="Show commit messages in node" )
+parser.add_argument("--show-head", action="store_true", help="Show where head is" )
+parser.add_argument("--show-remote-branches", action="store_true", help="Show remote branches if they match local (remotes that do not match local are always printed" )
 parser.add_argument("-C", dest="C", help="Path to dir" )
 parser.add_argument("-r", "--range", help="git commit range" )
 
@@ -51,6 +53,15 @@ def graphviz_list (name, s):
         return ""
     else:
         return ",{}=\"{}\"".format(name, ",".join(s))
+
+def simplify_ref (refEntry):
+    simple = refEntry
+    simple = simple.replace("HEAD -> ", "")
+    if simple != 'refs/stash':
+        simple = re.sub(r'^\s*[^/]+/', '', simple)
+    simple = simple.strip()
+    return simple
+
 
 revRange = ""
 if args.range:
@@ -88,12 +99,20 @@ def getCommitDiffHash(hash):
 
 print("digraph G {")
 print('    size="7.5,26" margin=0.5')
-#first extract messages
+
+#first extract messages and refs
+
+# {commit}->{simpleref}->[ref, ref, ref]
+commit_to_simpleref = { }
+# {simpleref}->set of commits
+simpleref_commits = { }
+
 for line in lines:
     match = re.match(pattern, line)
     if match:
         date = match.group(1)
         message = match.group(4)
+        ref = match.group(5)
         commitHash = match.group(6)
         if message in messages:
             existing = messages[message]
@@ -105,6 +124,30 @@ for line in lines:
             messages[message] = commitHash
         dates[commitHash] = date
         hashes[commitHash] = True
+        commit_to_simpleref[commitHash] = c_s = { }
+
+        if ref:
+            refEntries = ref.replace("(", "").replace(")", "").split(",")
+            logging.info ("hash %s <- ref entries %s", commitHash, refEntries)
+            for refEntry in refEntries:
+                refEntry = refEntry.strip()
+                if not args.show_head:
+                    refEntry = refEntry.replace("HEAD -> ", "")
+
+                simple = simplify_ref(refEntry)
+
+                sc_set = simpleref_commits.get(simple, None)
+                if sc_set is None:
+                    sc_set = simpleref_commits[simple] = set()
+                sc_set.add(commitHash)
+
+                s_r = c_s.get(simple, None)
+                if s_r is None:
+                    s_r = c_s[simple] = [ ]
+                s_r.append (refEntry)
+
+logging.info ("simplerefs -> commits = %s", simpleref_commits)
+#print (commit_to_simpleref)
 
 cutoff = time.time() - (24 * 60 * 60)
 for line in lines:
@@ -116,8 +159,6 @@ for line in lines:
         user = match.group(2)
         pdate = match.group(3)
         message = match.group(4)
-        ref = match.group(5)
-        logging.info ("ref %s", ref)
         commitHash = match.group(6)
         parentHash1 = match.group(7)
         parentHash2 = match.group(8)
@@ -165,7 +206,7 @@ for line in lines:
                 diffHashActual = getCommitDiffHash(commitHash)
                 logging.info("M [%s, %s, %s]", message, diffHashOld, diffHashActual)
                 if diffHashOld == diffHashActual:
-                    logging.info("equal")
+                    logging.info("diffHashes are equal: cherry pick %s -> %s", existingHash, commitHash)
                     #print('    "' + str(existingHash) + '"->"' + commitHash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     print('    "' + str(existingHash) + '"->"' + commitHash + '"[label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     nodeColor = COLOR_NODE_CHERRY_PICK
@@ -183,25 +224,40 @@ for line in lines:
             nodeColor = COLOR_NODE_REVERT
 
         nodeInfo = ""
-        if ref:
-            refEntries = ref.replace("(", "").replace(")", "").split(",")
-            logging.info ("ref entries %s", refEntries)
-            for refEntry in refEntries:
-                fillcolor = COLOR_BRANCH
-                linecolor = "black"
-                shape = "oval"
 
-                refEntry = refEntry.strip()
-                refEntry = refEntry.replace("HEAD -> ", "")
+        numberOfLines = math.floor(len(nodeMessage)/60) + 1
+        lineLength = round(len(nodeMessage) / numberOfLines)
+        chunks = textwrap.wrap (nodeMessage, lineLength + 6)
+        nm2 = ""
+        for line in chunks:
+          nm2 += "\\n"
+          line = line.replace("\\", "\\\\")
+          nm2 += line
+        pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
+        print("    \"" + commitHash + "\"[label=\"" + user + " " + pdate + " (" + commitHash + ")" + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
+        #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
 
+        for simple, refs in commit_to_simpleref[commitHash].items():
+            logging.info ("commithash: %s, simple '%s', refs %s", commitHash, simple, str(refs))
+            print_all_refs = args.show_remote_branches
+
+            commits_for_this_simple_ref = simpleref_commits[simple]
+            if len(commits_for_this_simple_ref) > 1:
+                # the various local/remotes for this branch are on multiple commits
+                logging.info ("branch %s shows up on multiple commits, printing all refs", simple)
+                print_all_refs = True
+
+            fillcolor = COLOR_BRANCH
+            linecolor = "black"
+            shape = "oval"
+            for refEntry in refs:
                 if "test" in refEntry:
                     fillcolor = COLOR_TEST
                 elif "master" in refEntry:
                     fillcolor = COLOR_MASTER
 
-                if "HEAD" in refEntry:
+                if "HEAD -> " in refEntry:
                     fillcolor = COLOR_HEAD
-                    #continue
                 elif "tag" in refEntry:
                     refEntry = refEntry.replace("tag: ", "")
                     fillcolor = COLOR_TAG
@@ -219,24 +275,17 @@ for line in lines:
                 #else:
                     #if "origin" in refEntry:
                     #    continue
-                style = "shape=%s,fillcolor=%s" % (shape, fillcolor)
-                refLabel = refEntry
-                refLabel = re.sub(r'^\s*origin/', '', refLabel)
 
-                nodeInfo += '    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];\n'
+            label_refs = refs
+            if not print_all_refs:
+                label_refs = []
+                for ref in refs:
+                    if 'refs/stash' in ref or '/' not in ref:
+                        label_refs.append(ref)
+            refLabel = '\\n'.join(label_refs)
 
-        numberOfLines = math.floor(len(nodeMessage)/60) + 1
-        lineLength = round(len(nodeMessage) / numberOfLines)
-        chunks = textwrap.wrap (nodeMessage, lineLength + 6)
-        nm2 = ""
-        for line in chunks:
-          nm2 += "\\n"
-          line = line.replace("\\", "\\\\")
-          nm2 += line
-        pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
-        print("    \"" + commitHash + "\"[label=\"" + user + " " + pdate + " (" + commitHash + ")" + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
-        #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
-        if nodeInfo:
-            print(nodeInfo)
+            style = "shape=%s,fillcolor=%s" % (shape, fillcolor)
+
+            print('    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];')
 print("}")
 
