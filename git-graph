@@ -38,6 +38,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-x", "--debug", dest="debug", action="store_true", help="Show debug messages on stderr")
 parser.add_argument("-m", "--messages", dest="messages", action="store_true", help="Show commit messages in node" )
 parser.add_argument("--show-head", action="store_true", help="Show where head is" )
+parser.add_argument("-g", "--geometry", default="1x1", help="W x H of output; specify as 2x1 for two wide, one tall" )
+parser.add_argument("-l", "--landscape", help="duh" )
 parser.add_argument("--show-remote-branches", action="store_true", help="Show remote branches if they match local (remotes that do not match local are always printed" )
 parser.add_argument("-C", dest="C", help="Path to dir" )
 parser.add_argument("-r", "--range", help="git commit range" )
@@ -97,8 +99,22 @@ def getCommitDiffHash(hash):
     sha = hashlib.sha1(diff.encode('utf-8'))
     return sha.hexdigest()
 
+w = 8.5
+h = 11
+margin = 0.5
+if args.landscape:
+    w = 11
+    h = 8.5
+match = re.match(r'^\s*(\d+)\s*x\s*(\d+)\s*$', args.geometry)
+if match:
+    w = w * int(match.group(1))
+    h = h * int(match.group(2))
+w = w - (2 * margin)
+h = h - (2 * margin)
+logging.info ('width, height = %f, %f, margin = %f', w, h, margin)
+
 print("digraph G {")
-print('    size="7.5,26" margin=0.5')
+print('    size="{0}!,{1}!" margin={2}'.format(w, h, margin))
 
 #first extract messages and refs
 
@@ -171,11 +187,60 @@ for line in lines:
         nodeStyle = set()
         nodeStyle.add("filled")
 
+        stashed = False
+
+        for simple, refs in commit_to_simpleref[commitHash].items():
+            logging.info ("commithash: %s, simple '%s', refs %s", commitHash, simple, str(refs))
+            print_all_refs = args.show_remote_branches
+
+            commits_for_this_simple_ref = simpleref_commits[simple]
+            if len(commits_for_this_simple_ref) > 1:
+                # the various local/remotes for this branch are on multiple commits
+                logging.info ("branch %s shows up on multiple commits, printing all refs", simple)
+                print_all_refs = True
+
+            ref_fillcolor = COLOR_BRANCH
+            ref_linecolor = "black"
+            ref_shape = "oval"
+            for refEntry in refs:
+                if "test" in refEntry:
+                    ref_fillcolor = COLOR_TEST
+                elif "master" in refEntry:
+                    ref_fillcolor = COLOR_MASTER
+
+                if "HEAD -> " in refEntry:
+                    ref_fillcolor = COLOR_HEAD
+                elif "tag" in refEntry:
+                    refEntry = refEntry.replace("tag: ", "")
+                    ref_fillcolor = COLOR_TAG
+                elif "stash" in refEntry:
+                    ref_fillcolor = COLOR_STASH
+                    stashed = True
+                    if getCommitDiff(parentHash1) == "":
+                        predefinedNodeColor[parentHash1] = COLOR_STASH
+                    elif getCommitDiff(parentHash2) == "":
+                        predefinedNodeColor[parentHash2] = COLOR_STASH
+                    continue
+
+            label_refs = refs
+            if not print_all_refs:
+                label_refs = []
+                for ref in refs:
+                    if 'refs/stash' in ref or '/' not in ref:
+                        label_refs.append(ref)
+            refLabel = '\\n'.join(label_refs)
+
+            style = "shape=%s,fillcolor=%s" % (ref_shape, ref_fillcolor)
+
+            print('    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];')
+
+
         if when > cutoff:
             nodeStyle.add("bold")
 
         if args.messages:
             nodeMessage = "\n" + message.replace("\"", "'");
+
         if commitHash in predefinedNodeColor:
             labelExt = "\\nSTASH INDEX"
             nodeColor = predefinedNodeColor[commitHash]
@@ -220,8 +285,12 @@ for line in lines:
                 originalMessage = match.group(1)
                 logging.info("Revert match [%s]", originalMessage)
                 origRevertHash = messages[originalMessage]
-                print('    "' + commitHash + '"->"' + str(origRevertHash) + '"[dir=back,label="Revert",style=dotted,fontcolor="azure4",color="azure4"]')
+                print('    "' + commitHash + '"->"' + str(origRevertHash) + '"[label="Revert",style=dotted,fontcolor="azure4",color="azure4"]')
             nodeColor = COLOR_NODE_REVERT
+
+        if stashed:
+            nodeColor = COLOR_STASH
+            labelExt = "\\nSTASH"
 
         nodeInfo = ""
 
@@ -237,55 +306,5 @@ for line in lines:
         print("    \"" + commitHash + "\"[label=\"" + user + " " + pdate + " (" + commitHash + ")" + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
         #print("    \"" + commitHash + "\"[label=\"" + commitHash + nodeMessage + labelExt + "\\n(" + user + ")\",shape=box,style=filled,fillcolor=" + nodeColor + "];" + link + link2)
 
-        for simple, refs in commit_to_simpleref[commitHash].items():
-            logging.info ("commithash: %s, simple '%s', refs %s", commitHash, simple, str(refs))
-            print_all_refs = args.show_remote_branches
-
-            commits_for_this_simple_ref = simpleref_commits[simple]
-            if len(commits_for_this_simple_ref) > 1:
-                # the various local/remotes for this branch are on multiple commits
-                logging.info ("branch %s shows up on multiple commits, printing all refs", simple)
-                print_all_refs = True
-
-            fillcolor = COLOR_BRANCH
-            linecolor = "black"
-            shape = "oval"
-            for refEntry in refs:
-                if "test" in refEntry:
-                    fillcolor = COLOR_TEST
-                elif "master" in refEntry:
-                    fillcolor = COLOR_MASTER
-
-                if "HEAD -> " in refEntry:
-                    fillcolor = COLOR_HEAD
-                elif "tag" in refEntry:
-                    refEntry = refEntry.replace("tag: ", "")
-                    fillcolor = COLOR_TAG
-                    shape = "oval"
-                elif "stash" in refEntry:
-                    fillcolor = COLOR_STASH
-                    shape = "box"
-                    nodeColor = COLOR_STASH
-                    labelExt = "\\nSTASH"
-                    if getCommitDiff(parentHash1) == "":
-                        predefinedNodeColor[parentHash1] = COLOR_STASH
-                    elif getCommitDiff(parentHash2) == "":
-                        predefinedNodeColor[parentHash2] = COLOR_STASH
-                    continue
-                #else:
-                    #if "origin" in refEntry:
-                    #    continue
-
-            label_refs = refs
-            if not print_all_refs:
-                label_refs = []
-                for ref in refs:
-                    if 'refs/stash' in ref or '/' not in ref:
-                        label_refs.append(ref)
-            refLabel = '\\n'.join(label_refs)
-
-            style = "shape=%s,fillcolor=%s" % (shape, fillcolor)
-
-            print('    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];')
 print("}")
 
