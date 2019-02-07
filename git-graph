@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 __author__ = 'Stephan Bechter <stephan@apogeum.at>'
 import subprocess
 import re
@@ -78,7 +78,7 @@ def getCommitDiffHash(hash):
     return sha.hexdigest()
 
 print("digraph G {")
-print('    size="7.5,13" margin=0.5')
+print('    size="7.5,26" margin=0.5')
 #first extract messages
 for line in lines:
     match = re.match(pattern, line)
@@ -108,6 +108,7 @@ for line in lines:
         pdate = match.group(3)
         message = match.group(4)
         ref = match.group(5)
+        logging.info ("ref %s", ref)
         commitHash = match.group(6)
         parentHash1 = match.group(7)
         parentHash2 = match.group(8)
@@ -155,8 +156,9 @@ for line in lines:
                 diffHashActual = getCommitDiffHash(commitHash)
                 logging.info("M [%s, %s, %s]", message, diffHashOld, diffHashActual)
                 if diffHashOld == diffHashActual:
-                    log("equal")
-                    print('    "' + str(existingHash) + '"->"' + commitHash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
+                    logging.info("equal")
+                    #print('    "' + str(existingHash) + '"->"' + commitHash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
+                    print('    "' + str(existingHash) + '"->"' + commitHash + '"[label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     nodeColor = COLOR_NODE_CHERRY_PICK
                     #labelExt = "\\nCherry Pick"
         logging.info("Message: [%s]", message)
@@ -174,12 +176,14 @@ for line in lines:
         nodeInfo = ""
         if ref:
             refEntries = ref.replace("(", "").replace(")", "").split(",")
+            logging.info ("ref entries %s", refEntries)
             for refEntry in refEntries:
                 fillcolor = COLOR_BRANCH
                 linecolor = "black"
                 shape = "oval"
 
                 refEntry = refEntry.strip()
+                refEntry = refEntry.replace("HEAD -> ", "")
 
                 if "test" in refEntry:
                     fillcolor = COLOR_TEST
@@ -188,11 +192,11 @@ for line in lines:
 
                 if "HEAD" in refEntry:
                     fillcolor = COLOR_HEAD
-                    continue
+                    #continue
                 elif "tag" in refEntry:
                     refEntry = refEntry.replace("tag: ", "")
                     fillcolor = COLOR_TAG
-                    shape = oval
+                    shape = "oval"
                 elif "stash" in refEntry:
                     fillcolor = COLOR_STASH
                     shape = "box"
@@ -210,7 +214,7 @@ for line in lines:
                 refLabel = refEntry
                 refLabel = re.sub(r'^\s*origin/', '', refLabel)
 
-                nodeInfo += '    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted]\n'
+                nodeInfo += '    "' + refEntry + '"[label=\"' + refLabel + '\",style=filled,' + style + ']; "' + refEntry + '" -> "' + commitHash + '" [style=dotted];\n'
 
         numberOfLines = math.floor(len(nodeMessage)/60) + 1
         lineLength = round(len(nodeMessage) / numberOfLines)
@@ -218,6 +222,7 @@ for line in lines:
         nm2 = ""
         for line in chunks:
           nm2 += "\\n"
+          line = line.replace("\\", "\\\\")
           nm2 += line
         pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
         print("    \"" + commitHash + "\"[label=\"" + user + " " + pdate + " (" + commitHash + ")" + nm2 + labelExt + "\",shape=" + nodeShape + graphviz_list("style", nodeStyle) + ",fillcolor=" + nodeColor + "];" + link + link2)
