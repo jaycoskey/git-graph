@@ -59,7 +59,7 @@ def graphviz_list (name, s):
 
 def simplify_ref (refEntry):
     simple = refEntry
-    simple = simple.replace("HEAD -> ", "")
+    #simple = simple.replace("HEAD -> ", "")
     if simple != 'refs/stash':
         simple = re.sub(r'^\s*[^/]+/', '', simple)
     simple = simple.strip()
@@ -152,6 +152,8 @@ for line in lines:
                 refEntry = refEntry.strip()
                 if not args.show_head:
                     refEntry = refEntry.replace("HEAD -> ", "")
+                    if refEntry == "origin/HEAD":
+                        continue
 
                 simple = simplify_ref(refEntry)
 
