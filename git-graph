@@ -44,6 +44,7 @@ parser.add_argument("-l", "--landscape", help="duh" )
 parser.add_argument("--show-remote-branches", action="store_true", help="Show remote branches if they match local (remotes that do not match local are always printed" )
 parser.add_argument("-C", dest="C", help="Path to dir" )
 parser.add_argument("-r", "--range", help="git commit range" )
+parser.add_argument("--since", help="git commit date --since" )
 
 args = parser.parse_args()
 
@@ -75,7 +76,11 @@ git_dir_spec=""
 if args.C:
     git_dir_spec = "-C " + args.C + " "
 
-gitLogCommand = 'git ' + git_dir_spec + 'log --topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
+git_since_spec=""
+if args.since:
+    git_since_spec = "--since " + args.since + " "
+
+gitLogCommand = 'git ' + git_dir_spec + 'log ' + git_since_spec + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
 logging.info('Git log command: %s', gitLogCommand)
 output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
 (out, err) = output.communicate()
