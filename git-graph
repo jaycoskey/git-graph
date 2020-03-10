@@ -75,7 +75,7 @@ git_dir_spec=""
 if args.C:
     git_dir_spec = "-C " + args.C + " "
 
-gitLogCommand = 'git ' + git_dir_spec + 'log --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
+gitLogCommand = 'git ' + git_dir_spec + 'log --topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all ' + revRange
 logging.info('Git log command: %s', gitLogCommand)
 output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
 (out, err) = output.communicate()
