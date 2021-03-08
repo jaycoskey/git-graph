@@ -32,6 +32,10 @@ COLOR_MASTER       = 'paleturquoise'
 COLOR_ROBOTBUILDER = 'palegreen'
 COLOR_TEST         = 'orchid1'
 
+# Groups: 1:int, 2-5:.*, 6-8:str
+PATTERN_GIT_LOG_LINE   = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
+PATTERN_REVERT_MESSAGE = re.compile(r'Revert "(.*)"')
+
 
 # Get only the changed lines (starting with + or -), no line numbers, hashes, ...
 def get_commit_diff(hash:str):
@@ -58,7 +62,7 @@ def graphviz_list (name:str, s:Set[str]):
 
 
 def process_log_line_make_graph(line):
-    match = re.match(pattern, line)
+    match = re.match(PATTERN_GIT_LOG_LINE, line)
     if match:
         timestamp   = match.group(1)
         message     = match.group(4)
@@ -105,7 +109,7 @@ def process_log_line_make_graph(line):
 
 
 def process_log_line_write_dotfile(line):
-    match = re.match(pattern, line)
+    match = re.match(PATTERN_GIT_LOG_LINE, line)
     if match:
         timestamp    = match.group(1)
         when         = int(timestamp)
@@ -220,7 +224,7 @@ def process_log_line_write_dotfile(line):
         # Check for a commit reversion
         if message.startswith("Revert"):
             logging.info('Revert commit')
-            match = re.match(revert_message_pattern, message)
+            match = re.match(PATTERN_REVERT_MESSAGE, message)
             if match:
                 originalMessage = match.group(1)
                 logging.info('Revert match [%s]', originalMessage)
@@ -260,10 +264,6 @@ def simplify_ref (ref_entry:str):
 
 
 if __name__ == '__main__':
-    # Groups: 1:int, 2-5:.*, 6-8:str
-    pattern = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
-    revert_message_pattern = re.compile(r'Revert "(.*)"')
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-C', dest='C'
