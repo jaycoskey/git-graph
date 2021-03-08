@@ -34,18 +34,18 @@ COLOR_TEST         = 'orchid1'
 
 
 # Get only the changed lines (starting with + or -), no line numbers, hashes, ...
-def getCommitDiff(hash:str):
+def get_commit_diff(hash:str):
     global git_dir_spec
 
-    command = f'git {git_dir_spec} diff {hash}^ {hash} | grep "^[-+]"'
-    logging.info('Hash Command: %s', command)
-    diffOutput = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+    git_diff_cmd = f'git {git_dir_spec} diff {hash}^ {hash} | grep "^[-+]"'
+    logging.info('Git diff command: %s', git_diff_cmd)
+    diffOutput = subprocess.Popen(git_diff_cmd, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
     (diff, err) = diffOutput.communicate()
     return diff
 
 
-def getCommitDiffHash(hash:str):
-    diff = getCommitDiff(hash)
+def get_commit_diff_hash(hash:str):
+    diff = get_commit_diff(hash)
     sha = hashlib.sha1(diff.encode('utf-8'))
     return sha.hexdigest()
 
@@ -54,11 +54,11 @@ def graphviz_list (name:str, s:Set[str]):
     if len(s) == 0:
         return ''
     else:
-        return ',{}="{}"'.format(name, ','.join(s))
+        return ',{}="{}"'.format(name, ','.join(s))  # Note: undefined order
 
 
-def simplify_ref (refEntry:str):
-    simple = refEntry
+def simplify_ref (ref_entry:str):
+    simple = ref_entry
     #simple = simple.replace('HEAD -> ', '')
     if simple != 'refs/stash':
         simple = re.sub(r'^\s*[^/]+/', '', simple)
@@ -69,7 +69,7 @@ def simplify_ref (refEntry:str):
 if __name__ == '__main__':
     # Groups: 1:int, 2-5:.*, 6-8:str
     pattern = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
-    revertMessagePattern = re.compile(r'Revert "(.*)"')
+    revert_message_pattern = re.compile(r'Revert "(.*)"')
 
     parser = argparse.ArgumentParser()
 
@@ -99,10 +99,10 @@ if __name__ == '__main__':
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    revRange = ''
+    rev_range = ''
     if args.range:
-        revRange = args.range
-        logging.info('Range: %s', revRange)
+        rev_range = args.range
+        logging.info('Range: %s', rev_range)
 
     git_dir_spec = ''
     if args.C:
@@ -112,19 +112,27 @@ if __name__ == '__main__':
     if args.since:
         git_since_spec = f'--since {args.since} '
 
-    gitLogCommand = (f'git {git_dir_spec}log {git_since_spec}'
-                    + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all '
-                    + revRange
-                    )
-    logging.info('Git log command: %s', gitLogCommand)
-    output = subprocess.Popen(gitLogCommand, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+    # 1: ct: Commit timestamp (UNIX timestamp)
+    # 2: an: Author name
+    # 3: ci: Commit date (ISO-8601-like)
+    # 4:  s: Message / subject
+    # 5:  d: Ref names
+    # 6:  h: Abbrev commit hash
+    # 7:  p: Abbrev parent hashes
+    git_log_cmd = (f'git {git_dir_spec}log {git_since_spec}'
+                  + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all '
+                  + rev_range
+                  )
+    logging.info('Git log command: %s', git_log_cmd)
+    output = subprocess.Popen(git_log_cmd, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
     (out, err) = output.communicate()
     lines = out.split('\n')
 
-    hashes = {}
-    dates = {}
-    messages = {}
-    predefinedNodeColor = {}
+    timestamps = {}
+    messages   = {}
+    hashes     = {}
+
+    predefined_node_color = {}
 
     w, h = 8.5, 11
     if args.landscape:
@@ -141,129 +149,128 @@ if __name__ == '__main__':
     print('digraph G {')
     print(f'    size="{w}!,{h}!" margin={margin}')
 
-    #first extract messages and refs
+    # First: Extract messages and refs
 
     # {commit}->{simpleref}->[ref, ref, ref]
-    commit_to_simpleref = { }
+    commit2simpleref = { }
     # {simpleref}->set of commits
-    simpleref_commits = { }
+    simpleref2commits = { }
 
-    local_ref_present = set()
+    local_refs = set()
 
     for line in lines:
         match = re.match(pattern, line)
         if match:
-            date       = match.group(1)
-            message    = match.group(4)
-            ref        = match.group(5)
-            commitHash = match.group(6)
+            timestamp   = match.group(1)
+            message     = match.group(4)
+            refs        = match.group(5)
+            commit_hash = match.group(6)
 
             if message in messages:
                 existing = messages[message]
-                # print(dates[existing] + ' - ' + date)
-                if dates[existing] > date:
+                # print(timestamps[existing] + ' - ' + timestamp)
+                if timestamps[existing] > timestamp:
                     # print(f'setting message [{message}] with [{hash}]')
-                    messages[message] = commitHash
+                    messages[message] = commit_hash
             else:
-                messages[message] = commitHash
+                messages[message] = commit_hash
 
-            dates[commitHash] = date
-            hashes[commitHash] = True
-            commit_to_simpleref[commitHash] = c_s = { }
+            timestamps[commit_hash] = timestamp
+            hashes[commit_hash] = True
+            commit2simpleref[commit_hash] = c2sr = { }
 
-            if ref:
-                refEntries = ref.replace('(', '').replace(')', '').split(',')
-                logging.info ('hash %s <- ref entries %s', commitHash, refEntries)
-                for refEntry in refEntries:
-                    refEntry = refEntry.strip()
+            if refs:
+                ref_entries = refs.replace('(', '').replace(')', '').split(',')
+                logging.info ('hash %s <- ref entries %s', commit_hash, ref_entries)
+                for ref_entry in ref_entries:
+                    ref_entry = ref_entry.strip()
                     if not args.show_head:
-                        refEntry = refEntry.replace('HEAD -> ', '')
-                        if refEntry == 'origin/HEAD':
+                        ref_entry = ref_entry.replace('HEAD -> ', '')
+                        if ref_entry == 'origin/HEAD':
                             continue
 
-                    simple = simplify_ref(refEntry)
+                    simple = simplify_ref(ref_entry)
 
-                    if simple == refEntry:
-                        local_ref_present.add(simple)
+                    if simple == ref_entry:
+                        local_refs.add(simple)
 
-                    sc_set = simpleref_commits.get(simple, None)
-                    if sc_set is None:
-                        sc_set = simpleref_commits[simple] = set()
-                    sc_set.add(commitHash)
+                    sr_commits = simpleref2commits.get(simple, None)
+                    if sr_commits is None:
+                        sr_commits = simpleref2commits[simple] = set()
+                    sr_commits.add(commit_hash)
 
-                    s_r = c_s.get(simple, None)
-                    if s_r is None:
-                        s_r = c_s[simple] = [ ]
-                    s_r.append (refEntry)
+                    sr = c2sr.get(simple, None)
+                    if sr is None:
+                        sr = c2sr[simple] = [ ]
+                    sr.append(ref_entry)
 
-    logging.info ('simplerefs -> commits = %s', simpleref_commits)
-    commit_to_simpleref_pp = pprint.pformat(commit_to_simpleref, indent=1, width=80, depth=None)
-    logging.info (f'commit -> simplerefs -> [refs] = {commit_to_simpleref_pp}')
-    logging.info (f'local ref present = {local_ref_present}')
+    logging.info ('simplerefs -> commits = %s', simpleref2commits)
+    commit2simpleref_pp = pprint.pformat(commit2simpleref, indent=1, width=80, depth=None)
+    logging.info (f'commit -> simplerefs -> [refs] = {commit2simpleref_pp}')
+    logging.info (f'local refs present = {local_refs}')
 
     cutoff = time.time() - (24 * 60 * 60)
     for line in lines:
-        #print(line)
         match = re.match(pattern, line)
         if match:
-            date = match.group(1)
-            when = int(date)
-            user = match.group(2)
-            pdate = match.group(3)
-            message = match.group(4)
-            commitHash = match.group(6)
-            parentHash1 = match.group(7)
-            parentHash2 = match.group(8)
+            timestamp    = match.group(1)
+            when         = int(timestamp)
+            user         = match.group(2)
+            isodate      = match.group(3)
+            message      = match.group(4)
+            commit_hash  = match.group(6)
+            parent_hash1 = match.group(7)
+            parent_hash2 = match.group(8)
 
-            link1 = '' 
+            link1 = ''
             link2 = ''
-            labelExt = '' 
-            nodeMessage = '' 
+            labelExt = ''
+            node_message = ''
             nodeShape = 'box'
-            nodeStyle = set()
-            nodeStyle.add('filled')
+            node_styles = set()
+            node_styles.add('filled')
 
-            stashed = False
+            is_stashed = False
 
-            for simple, refs in commit_to_simpleref[commitHash].items():
-                logging.info ("Refs for %s: simple '%s', refs %s", commitHash, simple, str(refs))
-                print_all_refs = args.show_remote_branches
+            for simple, refs in commit2simpleref[commit_hash].items():
+                logging.info ("Refs for %s: simple '%s', refs %s", commit_hash, simple, str(refs))
+                do_print_all_refs = args.show_remote_branches
 
-                commits_for_this_simple_ref = simpleref_commits[simple]
+                commits_for_this_simple_ref = simpleref2commits[simple]
                 if len(commits_for_this_simple_ref) > 1:
                     # the various local/remotes for this branch are on multiple commits
                     logging.info ('branch %s shows up on multiple commits, printing all refs', simple)
-                    print_all_refs = True
+                    do_print_all_refs = True
 
                 # No local refs, so we print the remote ones.
-                if not simple in local_ref_present:
-                    print_all_refs = True
+                if not simple in local_refs:
+                    do_print_all_refs = True
 
                 ref_fillcolor = COLOR_BRANCH
                 ref_linecolor = 'black'
                 ref_shape = 'oval'
-                for refEntry in refs:
-                    if 'test' in refEntry:
+                for ref_entry in refs:
+                    if 'test' in ref_entry:
                         ref_fillcolor = COLOR_TEST
-                    elif 'master' in refEntry:
+                    elif 'master' in ref_entry:
                         ref_fillcolor = COLOR_MASTER
 
-                    if 'HEAD -> ' in refEntry:
+                    if 'HEAD -> ' in ref_entry:
                         ref_fillcolor = COLOR_HEAD
-                    elif 'tag' in refEntry:
-                        refEntry = refEntry.replace('tag: ', '')
+                    elif 'tag' in ref_entry:
+                        ref_entry = ref_entry.replace('tag: ', '')
                         ref_fillcolor = COLOR_TAG
-                    elif 'stash' in refEntry:
+                    elif 'stash' in ref_entry:
                         ref_fillcolor = COLOR_STASH
-                        stashed = True
-                        if getCommitDiff(parentHash1) == '':
-                            predefinedNodeColor[parentHash1] = COLOR_STASH
-                        elif getCommitDiff(parentHash2) == '':
-                            predefinedNodeColor[parentHash2] = COLOR_STASH
+                        is_stashed = True
+                        if get_commit_diff(parent_hash1) == '':
+                            predefined_node_color[parent_hash1] = COLOR_STASH
+                        elif get_commit_diff(parent_hash2) == '':
+                            predefined_node_color[parent_hash2] = COLOR_STASH
                         continue
 
                 label_refs = refs
-                if not print_all_refs:
+                if not do_print_all_refs:
                     label_refs = []
                     for ref in refs:
                         if 'refs/stash' in ref or '/' not in ref:
@@ -271,80 +278,80 @@ if __name__ == '__main__':
 
                 # Use label_refs even if empty. The resulting empty bubble is a sign of a code bug.
                 refLabel = '\\n'.join(label_refs)
-                style = f'shape={ref_shape},fillcolor={ref_fillcolor}'
-                print(f'    "{refEntry}"[label="{refLabel}",style=filled,{style}]; "{refEntry}" -> "{commitHash}" [style=dotted];')
+                attrs = f'label="{refLabel}",style=filled,shape={ref_shape},fillcolor={ref_fillcolor}'
+                print(f'    "{ref_entry}"[{attrs}]; "{ref_entry}" -> "{commit_hash}" [style=dotted];')
 
             if when > cutoff:
-                nodeStyle.add('bold')
+                node_styles.add('bold')
 
             if args.messages:
-                nodeMessage = '\n' + message.replace('"', "'");
+                node_message = '\n' + message.replace('"', "'");
 
-            if commitHash in predefinedNodeColor:
+            if commit_hash in predefined_node_color:
                 labelExt = '\\nSTASH INDEX'
-                nodeColor = predefinedNodeColor[commitHash]
+                node_color = predefined_node_color[commit_hash]
             else:
-                nodeColor=COLOR_NODE
+                node_color=COLOR_NODE
 
-            if parentHash1:
-                if parentHash1 in hashes:
-                    link1 = f' "{commitHash}"->"{parentHash1}" [dir=back];'
+            if parent_hash1:
+                if parent_hash1 in hashes:
+                    link1 = f' "{commit_hash}"->"{parent_hash1}" [dir=back];'
             else:
-                #initial commit
-                nodeColor = COLOR_NODE_FIRST
+                # Initial commit
+                node_color = COLOR_NODE_FIRST
 
-            if parentHash2:
-                if parentHash2 in hashes:
-                    link2 = f' "{commitHash}"->"{parentHash2}" [dir=back];'
+            if parent_hash2:
+                if parent_hash2 in hashes:
+                    link2 = f' "{commit_hash}"->"{parent_hash2}" [dir=back];'
 
-            if parentHash1 and parentHash2:
-                nodeColor = COLOR_NODE_MERGE
-                #nodeShape = 'box3d'
-                nodeStyle.add('diagonals')
+            if parent_hash1 and parent_hash2:
+                node_color = COLOR_NODE_MERGE
+                node_styles.add('diagonals')
 
             if message in messages:
-                # message exists in history - possible cherry-pick -> compare diff hashes
-                existingHash = messages[message]
-                if commitHash is not existingHash and date > dates[existingHash]:
-                    diffHashOld = getCommitDiffHash(existingHash)
-                    diffHashActual = getCommitDiffHash(commitHash)
-                    logging.info('M [%s, %s, %s]', message, diffHashOld, diffHashActual)
-                    if diffHashOld == diffHashActual:
-                        logging.info('diffHashes are equal: cherry pick %s -> %s', existingHash, commitHash)
-                        # print('    " + str(existingHash) + '"->"' + commitHash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
-                        print(f'    "{str(existingHash)}"->"{commitHash}"[label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
-                        nodeColor = COLOR_NODE_CHERRY_PICK
+                # Message exists in history - possible cherry-pick -> compare diff hashes
+                existing_hash = messages[message]
+                if commit_hash is not existing_hash and timestamp > timestamps[existing_hash]:
+                    diff_hash_old = get_commit_diff_hash(existing_hash)
+                    diff_hash_actual = get_commit_diff_hash(commit_hash)
+                    logging.info('M [%s, %s, %s]', message, diff_hash_old, diff_hash_actual)
+                    if diff_hash_old == diff_hash_actual:
+                        logging.info('diffHashes are equal: cherry pick %s -> %s', existing_hash, commit_hash)
+                        # print('    " + str(existing_hash) + '"->"' + commit_hash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
+                        print(f'    "{str(existing_hash)}"->"{commit_hash}"[label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
+                        node_color = COLOR_NODE_CHERRY_PICK
                         # labelExt = '\\nCherry Pick'
             logging.info('Message: [%s]', message)
+
+            # Check for a commit reversion
             if message.startswith("Revert"):
-                # check for revert
                 logging.info('Revert commit')
-                match = re.match(revertMessagePattern, message)
+                match = re.match(revert_message_pattern, message)
                 if match:
                     originalMessage = match.group(1)
-                    logging.info("Revert match [%s]", originalMessage)
+                    logging.info('Revert match [%s]', originalMessage)
                     origRevertHashStr = str(messages[originalMessage])
-                    print(f'    "{commitHash}"->"{origRevertHashStr}"[label="Revert",style=dotted,fontcolor="azure4",color="azure4"]')
-                nodeColor = COLOR_NODE_REVERT
+                    print(f'    "{commit_hash}"->"{origRevertHashStr}"[label="Revert",style=dotted,fontcolor="azure4",color="azure4"]')
+                node_color = COLOR_NODE_REVERT
 
-            if stashed:
-                nodeColor = COLOR_STASH
+            if is_stashed:
+                node_color = COLOR_STASH
                 labelExt = '\\nSTASH'
 
             nodeInfo = ''
 
-            numberOfLines = math.floor(len(nodeMessage) / 60) + 1
-            lineLength = round(len(nodeMessage) / numberOfLines)
-            chunks = textwrap.wrap(nodeMessage, lineLength + 6)
+            number_of_lines = math.floor(len(node_message) / 60) + 1
+            line_length = round(len(node_message) / number_of_lines)
+            chunks = textwrap.wrap(node_message, line_length + 6)
             nm2 = ''
             for line in chunks:
               nm2 += '\\n'
               line = line.replace('\\', '\\\\')
               nm2 += line
-            pdate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', pdate)
-            style_spec = graphviz_list('style', nodeStyle)
-            attrs = f'shape={nodeShape}{style_spec},fillcolor={nodeColor}'
-            print(f'    "{commitHash}"[label="{user} {pdate} ({commitHash}){nm2}{labelExt}",{attrs}];' 
+            isodate = re.sub(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', r'\1', isodate)
+            style_spec = graphviz_list('style', node_styles)
+            attrs = f'shape={nodeShape}{style_spec},fillcolor={node_color}'
+            print(f'    "{commit_hash}"[label="{user} {isodate} ({commit_hash}){nm2}{labelExt}",{attrs}];'
                  + link1 + link2
                  )
 
