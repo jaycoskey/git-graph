@@ -9,6 +9,7 @@ import collections
 import hashlib
 import logging
 import math
+# JMC: import os
 import pprint
 import re
 import subprocess
@@ -317,9 +318,14 @@ if __name__ == '__main__':
                   + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p"'
                   )
     logging.info('Git log command: %s', git_log_cmd)
-    output     = subprocess.Popen(git_log_cmd, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
-    (out, err) = output.communicate()
-    lines      = out.split('\n')
+    # TODO: Handle encoding issue with non-UTF-8 character encoding (e.g., 0xa9).
+    proc = subprocess.Popen( git_log_cmd
+                           , shell=True
+                           , stdout=subprocess.PIPE
+                           , universal_newlines=True
+                           )
+    output, err = proc.communicate()
+    lines       = output.split('\n')
 
     timestamps = {}
     messages   = {}
