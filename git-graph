@@ -36,7 +36,6 @@ COLOR_TEST         = 'orchid1'
 PATTERN_GIT_LOG_LINE   = re.compile(r'^\[(\d+)\|\|(.*)\|\|(.*)\|\|(.*)\|\|\s?(.*)\]\s([0-9a-f]*)\s?([0-9a-f]*)\s?([0-9a-f]*)$')
 PATTERN_REVERT_MESSAGE = re.compile(r'Revert "(.*)"')
 
-
 # Get only the changed lines (starting with + or -), no line numbers, hashes, ...
 def get_commit_diff(hash:str):
     global git_dir_spec
@@ -215,7 +214,6 @@ def process_log_line_write_dotfile(line):
                 logging.info('M [%s, %s, %s]', message, diff_hash_old, diff_hash_actual)
                 if diff_hash_old == diff_hash_actual:
                     logging.info('diff hashes are equal: cherry pick %s -> %s', existing_hash, commit_hash)
-                    # print('    " + str(existing_hash) + '"->"' + commit_hash + '"[dir=back,label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     print(f'    "{str(existing_hash)}"->"{commit_hash}"[label="Cherry\\nPick",style=dotted,fontcolor="red",color="red"]')
                     node_color = COLOR_NODE_CHERRY_PICK
                     # labelExt = '\\nCherry Pick'
@@ -256,7 +254,6 @@ def process_log_line_write_dotfile(line):
 
 def simplify_ref (ref_entry:str):
     simple = ref_entry
-    #simple = simple.replace('HEAD -> ', '')
     if simple != 'refs/stash':
         simple = re.sub(r'^\s*[^/]+/', '', simple)
     simple = simple.strip()
@@ -264,29 +261,33 @@ def simplify_ref (ref_entry:str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    def get_args():
+        parser = argparse.ArgumentParser()
+    
+        parser.add_argument('-C', dest='C'
+                           , help='Path to dir')
+        parser.add_argument('-g', '--geometry', default='1x1'
+                           , help='W x H of output; specify as 2x1 for two wide, one tall')
+        parser.add_argument('-l', '--landscape'
+                           , help='Use landscape mode in output')
+        parser.add_argument('-m', '--messages', dest='messages', action='store_true'
+                           , help='Show commit messages in node')
+        parser.add_argument('-r', '--range'
+                           , help='git commit range')
+        parser.add_argument('--show-head', action='store_true'
+                           , help='Show where head is')
+        parser.add_argument('--show-remote-branches', action='store_true'
+                           , help='Show remote branches if they match local (remotes that do not match local are always printed)')
+        parser.add_argument('--since'
+                           , help='git commit date --since')
+    
+        parser.add_argument('-x', '--debug', dest='debug', action='store_true'
+                           , help='Show debug messages on stderr')
+    
+        args = parser.parse_args()
+        return args
 
-    parser.add_argument('-C', dest='C'
-                       , help='Path to dir')
-    parser.add_argument('-g', '--geometry', default='1x1'
-                       , help='W x H of output; specify as 2x1 for two wide, one tall')
-    parser.add_argument('-l', '--landscape'
-                       , help='Use landscape mode in output')
-    parser.add_argument('-m', '--messages', dest='messages', action='store_true'
-                       , help='Show commit messages in node')
-    parser.add_argument('-r', '--range'
-                       , help='git commit range')
-    parser.add_argument('--show-head', action='store_true'
-                       , help='Show where head is')
-    parser.add_argument('--show-remote-branches', action='store_true'
-                       , help='Show remote branches if they match local (remotes that do not match local are always printed)')
-    parser.add_argument('--since'
-                       , help='git commit date --since')
-
-    parser.add_argument('-x', '--debug', dest='debug', action='store_true'
-                       , help='Show debug messages on stderr')
-
-    args = parser.parse_args()
+    args = get_args()
 
     logging.basicConfig(level=logging.INFO)
     if args.debug:
@@ -312,14 +313,13 @@ if __name__ == '__main__':
     # 5:  d: Ref names
     # 6:  h: Abbrev commit hash
     # 7:  p: Abbrev parent hashes
-    git_log_cmd = (f'git {git_dir_spec}log {git_since_spec}'
-                  + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p" --all '
-                  + rev_range
+    git_log_cmd = (f'git {git_dir_spec}log {git_since_spec} --all {rev_range} '
+                  + '--topo-order --pretty=format:"[%ct||%an||%ci||%s||%d] %h %p"'
                   )
     logging.info('Git log command: %s', git_log_cmd)
-    output = subprocess.Popen(git_log_cmd, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+    output     = subprocess.Popen(git_log_cmd, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
     (out, err) = output.communicate()
-    lines = out.split('\n')
+    lines      = out.split('\n')
 
     timestamps = {}
     messages   = {}
@@ -339,19 +339,16 @@ if __name__ == '__main__':
     h = h - (2 * margin)
     logging.info (f'width, height = {w}, {h}, margin = {margin}')
 
+    commit2simpleref  = { }  # {commit}->{simpleref}->[ref, ref, ref]
+    simpleref2commits = { }  # {simpleref}->set of commits
+    local_refs = set()
+
+    # ---------- BEGINNING OF DOTFILE ----------
     print('digraph G {')
     print(f'    size="{w}!,{h}!" margin={margin}')
 
-    # First: Extract messages and refs
-
-    # {commit}->{simpleref}->[ref, ref, ref]
-    commit2simpleref = { }
-    # {simpleref}->set of commits
-    simpleref2commits = { }
-
-    local_refs = set()
-
     for line in lines:
+        # Extract messages and refs
         process_log_line_make_graph(line)
 
     logging.info ('simplerefs -> commits = %s', simpleref2commits)
@@ -364,3 +361,4 @@ if __name__ == '__main__':
         process_log_line_write_dotfile(line)
 
     print('}')
+    # ---------- ENDING OF DOTFILE ----------
