@@ -107,7 +107,7 @@ def process_log_line_make_graph(line):
                 sr.append(ref_entry)
 
 
-def process_log_line_write_dotfile(line):
+def process_log_line_write_dotfile(cutoff, line):
     match = re.match(PATTERN_GIT_LOG_LINE, line)
     if match:
         timestamp    = match.group(1)
@@ -358,7 +358,7 @@ if __name__ == '__main__':
 
     cutoff = time.time() - (24 * 60 * 60)
     for line in lines:
-        process_log_line_write_dotfile(line)
+        process_log_line_write_dotfile(cutoff, line)
 
     print('}')
     # ---------- ENDING OF DOTFILE ----------
