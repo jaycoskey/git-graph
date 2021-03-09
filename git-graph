@@ -9,7 +9,6 @@ import collections
 import hashlib
 import logging
 import math
-# JMC: import os
 import pprint
 import re
 import subprocess
